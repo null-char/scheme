@@ -1,10 +1,13 @@
 name: scheme
 version: 0.1.0.0
-github: "githubuser/scheme"
+github: "null-char/scheme"
 license: BSD3
-author: "Author name here"
-maintainer: "example@example.com"
-copyright: "2020 Author name here"
+author: "Sooryakiran Ponnath"
+maintainer: "skp.frl@gmail.com"
+copyright: "2020 Sooryakiran Ponnath"
+
+default-extensions:
+  - OverloadedStrings
 
 extra-source-files:
   - README.md
@@ -25,6 +28,8 @@ dependencies:
   - text
   - containers
   - mtl
+  - parsec
+  - hspec
 
 library:
   source-dirs: src
