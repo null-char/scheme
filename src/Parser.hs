@@ -1,9 +1,10 @@
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Parser (readExpr, readExprFile) where
 
 import Control.Applicative hiding ((<|>))
 import Control.Monad (mzero)
+import Data.Functor
 import Data.Functor.Identity (Identity)
 import qualified Data.Text as T
 import LispVal
@@ -20,10 +21,11 @@ langDef =
   L.emptyDef
     { Tk.commentStart = "{-",
       Tk.commentEnd = "-}",
-      Tk.opStart = mzero,
-      Tk.opLetter = mzero,
-      Tk.identStart = letter <|> oneOf "!$%&*/:<=>?^_~",
-      Tk.identLetter = digit <|> letter <|> oneOf "!$%&*/:<=>?^_~+-.@",
+      Tk.commentLine = "--",
+      Tk.opStart = Tk.opLetter langDef,
+      Tk.opLetter = oneOf ":!#$%%&*+./<=>?@\\^|-~",
+      Tk.identStart = letter <|> oneOf "-+/*=|&><",
+      Tk.identLetter = digit <|> letter <|> oneOf "?+=|&-/",
       Tk.reservedOpNames = ["'", "\""]
     }
 
@@ -31,54 +33,68 @@ langDef =
 lexer :: Tk.GenTokenParser T.Text () Identity
 lexer = Tk.makeTokenParser langDef
 
+Tk.TokenParser {Tk.parens = parens, Tk.whiteSpace = ws} = lexer
+
+reservedOp :: T.Text -> Parser ()
+reservedOp op = Tk.reservedOp lexer $ T.unpack op
+
 parseAtom :: Parser LispVal
 parseAtom = do
   ident <- Tk.identifier lexer
   return $ Atom $ T.pack ident
 
-sign :: Parser (Integer -> Integer)
-sign = char '+' *> return id <|> char '-' *> return negate <|> return id
+parsePosNumber :: Parser LispVal
+parsePosNumber = do
+  char '+'
+  d <- many1 digit
+  return $ Number $ read d
 
-dec :: Parser Integer
-dec = Tk.decimal lexer
+parseNegNumber :: Parser LispVal
+parseNegNumber = do
+  char '-'
+  d <- many1 digit
+  return . Number . negate . read $ d
+
+parseNormalNumber :: Parser LispVal
+parseNormalNumber = Number . read <$> many1 digit
 
 parseNumber :: Parser LispVal
-parseNumber = Number <$> (sign <*> dec)
+parseNumber = parseNormalNumber <|> try parsePosNumber <|> try parseNegNumber
 
 parseList :: Parser LispVal
-parseList = do
-  elems <- concat <$> Text.Parsec.many parseExp `sepBy` (char ' ' <|> char '\n')
-  return $ List elems
+parseList = List . concat <$> Text.Parsec.many parseExp `sepBy` (char ' ' <|> char '\n')
 
 parseSExp :: Parser LispVal
-parseSExp = Tk.parens lexer parseList
+parseSExp = List <$> parens (parseExp `sepBy` ws)
+
+parseReserved :: Parser LispVal
+parseReserved =
+  ((reservedOp "Nil" <|> reservedOp "()") >> return Nil)
+    <|> (reservedOp "()" >> return Nil)
+    <|> (reservedOp "#t" >> return (Bool True))
+    <|> (reservedOp "#f" >> return (Bool False))
 
 -- Example: 2 > '"x y z"
 -- Result: "x y z"
 parseQuote :: Parser LispVal
 parseQuote = do
-  Tk.reservedOp lexer "\'"
-  parseExp
+  reservedOp "\'"
+  lsp <- parseExp
+  return $ List [Atom "quote", lsp]
 
 parseString :: Parser LispVal
 parseString = do
-  Tk.reservedOp lexer "\""
+  reservedOp "\""
   s <- many1 $ noneOf "\""
+  reservedOp "\""
   return $ String $ T.pack s
 
-parseBool :: Parser LispVal
-parseBool =
-  char '#'
-    *> ( (char 't' *> (return $ Bool True))
-           <|> (char 'f' *> (return $ Bool False))
-       )
-
 parseExp :: Parser LispVal
-parseExp = parseAtom <|> parseNumber <|> parseList <|> parseQuote <|> parseSExp <|> parseString <|> parseBool
+parseExp = parseReserved <|> parseNumber <|> parseAtom <|> parseString <|> parseQuote <|> parseSExp
 
 contents :: Parser a -> Parser a
 contents p = do
-  Tk.whiteSpace lexer
+  ws
   x <- p
   eof
   return x
@@ -88,5 +104,5 @@ type ReadExpression = T.Text -> Either ParseError LispVal
 readExpr :: ReadExpression
 readExpr = parse (contents parseExp) "<stdin>"
 
-readExprFile :: ReadExpression
-readExprFile = parse (contents parseList) "<file>"
+readExprFile :: SourceName -> ReadExpression
+readExprFile = parse (contents parseList)
