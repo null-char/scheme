@@ -3,6 +3,7 @@
 
 module LispVal
   ( LispVal (..),
+    showVal,
   )
 where
 
@@ -14,7 +15,7 @@ import Data.Typeable (Typeable)
 type EnvCtx = M.Map T.Text LispVal
 
 -- Takes a list of `LispVal`s as arguments of the function
-data IFunc = IFunc {fn :: [LispVal] -> Eval LispVal}
+newtype IFunc = IFunc {fn :: [LispVal] -> Eval LispVal}
 
 instance Eq IFunc where
   (==) _ _ = False
@@ -42,10 +43,10 @@ newtype Eval a = Eval {unEval :: ReaderT EnvCtx IO a}
 showVal :: LispVal -> T.Text
 showVal v =
   case v of
-    (Atom atom) -> atom
-    (List values) -> T.concat ["(", T.unwords $ showVal <$> values, ")"]
-    (Number n) -> T.pack $ show n
-    (String s) -> T.concat ["\"", s, "\""]
+    (Atom atom) -> T.concat ["Atom ", atom]
+    (List values) -> T.concat ["List ", "(", T.unwords $ showVal <$> values, ")"]
+    (Number n) -> T.concat ["Number ", T.pack $ show n]
+    (String s) -> T.concat ["String ", "\"", s, "\""]
     (Fun _) -> "(internal func)"
     (Lambda _ _) -> "(lambda func)"
     Nil -> "Nil"
